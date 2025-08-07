@@ -1,0 +1,118 @@
+# =============================================================================
+# Makefile cho ứng dụng GUI trên Windows sử dụng MinGW
+# Chức năng: Biên dịch, liên kết, và đóng gói ứng dụng.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# PHẦN 1: CẤU HÌNH BIẾN
+# Định nghĩa các biến để quản lý trình biên dịch, cờ, và file.
+# -----------------------------------------------------------------------------
+
+# Trình biên dịch sẽ được sử dụng
+CXX = g++
+CC  = gcc
+
+# Cờ (flags) cho trình biên dịch C++ và C
+# -I<thư mục> : Thêm một thư mục vào danh sách tìm kiếm file header (.h)
+CXXFLAGS = -std=c++17 -finput-charset=UTF-8 -fexec-charset=UTF-8 -I. -Icore -Ilibs/glad/include -Ilibs/glfw/include -Ilibs/imgui
+CFLAGS   = -I. -Icore -Ilibs/glad/include -Ilibs/glfw/include -Ilibs/imgui
+
+# Cờ cho trình liên kết (linker)
+# -L<thư mục> : Thêm một thư mục vào danh sách tìm kiếm thư viện (.a, .dll)
+# -l<tên>      : Liên kết với một thư viện cụ thể (ví dụ: -lglfw3 sẽ tìm libglfw3.a)
+# -mwindows    : Tạo ứng dụng đồ họa (không có cửa sổ console màu đen)
+# -static-* : Nhúng các thư viện chuẩn của trình biên dịch vào file .exe
+#                để giảm số lượng file .dll cần gửi kèm.
+LDFLAGS = -Llibs/glfw/lib-mingw-w64 -lglfw3 -lopengl32 -lgdi32 -luser32 -lkernel32 -lshell32 -lcomdlg32 -mwindows -static-libgcc -static-libstdc++
+
+# -----------------------------------------------------------------------------
+# PHẦN 2: ĐỊNH NGHĨA FILE
+# Liệt kê các file mã nguồn và xác định các file object tương ứng.
+# -----------------------------------------------------------------------------
+
+# Danh sách tất cả các file mã nguồn C++ (.cpp)
+CPP_SRCS =  main.cpp \
+			libs/imgui/imgui.cpp \
+			libs/imgui/imgui_draw.cpp \
+			libs/imgui/imgui_tables.cpp \
+			libs/imgui/imgui_widgets.cpp \
+			libs/imgui/backends/imgui_impl_glfw.cpp \
+			libs/imgui/backends/imgui_impl_opengl3.cpp
+
+# Danh sách tất cả các file mã nguồn C (.c)
+C_SRCS =  core_logic/hashtable.c \
+          core_logic/compress.c \
+          libs/glad/src/glad.c
+
+# Thư mục để chứa các file object (.o) được tạo ra trong quá trình biên dịch
+OBJDIR = build
+
+# Tạo danh sách tất cả các file object (.o) cần thiết
+# Hàm 'patsubst' sẽ thay thế đuôi .cpp và .c bằng .o và thêm tiền tố $(OBJDIR)/
+# Ví dụ: 'main.cpp' -> 'build/main.o'
+OBJS = $(patsubst %.cpp,$(OBJDIR)/%.o,$(CPP_SRCS)) \
+       $(patsubst %.c,$(OBJDIR)/%.o,$(C_SRCS)) \
+       $(OBJDIR)/icon.o
+
+# Tên file thực thi cuối cùng
+TARGET = TextAnalystGUI.exe
+
+# -----------------------------------------------------------------------------
+# PHẦN 3: CÁC QUY TẮC (RULES)
+# Định nghĩa cách 'make' xây dựng các target.
+# -----------------------------------------------------------------------------
+
+# Quy tắc mặc định: Khi chạy 'make' không có tham số, nó sẽ thực hiện quy tắc 'all'.
+all: $(TARGET)
+
+# Quy tắc liên kết (linking): Tạo ra file thực thi cuối cùng.
+# Target này phụ thuộc vào tất cả các file object trong biến $(OBJS).
+# Nó chỉ chạy khi tất cả các file .o đã được tạo hoặc cập nhật.
+$(TARGET): $(OBJS)
+	@echo Linking to create $(TARGET)...
+	$(CXX) $(OBJS) -o $@ $(LDFLAGS)
+	@echo Build successful!
+
+# --- Quy tắc mẫu (Pattern Rules) để biên dịch ---
+
+# Quy tắc chung để biên dịch một file .cpp thành một file .o
+# %.o : Bất kỳ file nào có đuôi .o
+# %.cpp: File tương ứng có đuôi .cpp
+# $@   : Tên của target (ví dụ: build/main.o)
+# $<   : Tên của file phụ thuộc đầu tiên (ví dụ: main.cpp)
+# $(@D) : Tên thư mục của target (ví dụ: build)
+$(OBJDIR)/%.o: %.cpp
+	-@mkdir $(subst /,\,$(@D))
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+# Quy tắc chung để biên dịch một file .c thành một file .o
+$(OBJDIR)/%.o: %.c
+	-@mkdir $(subst /,\,$(@D))
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Quy tắc để biên dịch file resource (icon)
+# Target này phụ thuộc vào file .rc và file .ico
+$(OBJDIR)/icon.o: icon.rc assets/app_icon.ico
+	-@mkdir $(subst /,\,$(@D))
+	windres $< -o $@
+
+# --- Các quy tắc tiện ích ---
+
+# Quy tắc dọn dẹp: Xóa các file đã được tạo ra
+clean:
+	@echo Cleaning up generated files...
+	@if exist $(OBJDIR) ( rmdir /S /Q $(OBJDIR) )
+	@if exist $(TARGET) ( del $(TARGET) )
+	@if exist icon.o ( del icon.o )
+
+# Quy tắc đóng gói: Tạo một thư mục 'dist' chứa các file cần thiết để chạy trên máy khác
+dist: $(TARGET)
+	@echo Creating distribution package...
+	-@mkdir dist
+	@copy /Y "$(subst /,\,$(TARGET))" "dist" > nul
+	@copy /Y "glfw3.dll" "dist" > nul
+	@copy /Y "libwinpthread-1.dll" "dist" > nul
+	@echo Distribution package created in 'dist' folder.
+
+# Khai báo các target không phải là file để 'make' không bị nhầm lẫn
+.PHONY: all clean dist
